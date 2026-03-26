@@ -11,6 +11,7 @@ import { Card, Heading, Text, Button, Input, Select } from '@stellar/design-syst
 import { SchedulingWizard } from '../components/SchedulingWizard';
 import { CountdownTimer } from '../components/CountdownTimer';
 import { BulkPaymentStatusTracker } from '../components/BulkPaymentStatusTracker';
+import { TransactionPendingOverlay } from '../components/TransactionPendingOverlay';
 
 import { ContractErrorPanel } from '../components/ContractErrorPanel';
 import { parseContractError, type ContractErrorDetail } from '../utils/contractErrorParser';
@@ -126,6 +127,8 @@ interface PendingClaim {
   status: string;
 }
 
+type OverlayStatus = 'pending' | 'success' | 'error';
+
 // Mock employer secret key for simulation purposes
 const MOCK_EMPLOYER_SECRET = 'SD3X5K7G7XV4K5V3M2G5QXH434M3VX6O5P3QVQO3L2PQSQQQQQQQQQQQ';
 
@@ -145,6 +148,10 @@ export default function PayrollScheduler() {
   const [formData, setFormData] = useState<PayrollFormState>(initialFormState);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+
+  const [overlayVisible, setOverlayVisible] = useState(false);
+  const [overlayStatus, setOverlayStatus] = useState<OverlayStatus>('pending');
+  const [overlayTxHash, setOverlayTxHash] = useState<string | undefined>();
   const [activeSchedule, setActiveSchedule] = useState<SchedulingConfig | null>(null);
   const [nextRunDate, setNextRunDate] = useState<Date | null>(null);
   const [contractError, setContractError] = useState<ContractErrorDetail | null>(null);
@@ -280,6 +287,10 @@ export default function PayrollScheduler() {
   const handleBroadcast = async () => {
     setIsBroadcasting(true);
     setContractError(null);
+    setOverlayVisible(true);
+    setOverlayStatus('pending');
+    setOverlayTxHash(undefined);
+
     try {
       const mockRecipientPublicKey = generateWallet().publicKey;
 
@@ -314,6 +325,15 @@ export default function PayrollScheduler() {
 
       // Subscribe to updates for this new claim
       subscribeToTransaction(newClaim.id);
+
+      // Show success overlay
+      setOverlayStatus('success');
+      setOverlayTxHash(result.txHash);
+
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => {
+        setOverlayVisible(false);
+      }, 3000);
 
       notifySuccess(
         'Broadcast successful!',
@@ -353,6 +373,7 @@ export default function PayrollScheduler() {
       );
       setContractError(parsed);
       notifyPaymentFailure(parsed.message);
+      setOverlayStatus('error');
     } finally {
       setIsBroadcasting(false);
     }
@@ -646,6 +667,13 @@ export default function PayrollScheduler() {
       <div className="w-full">
         <BulkPaymentStatusTracker organizationId={1} />
       </div>
+
+      <TransactionPendingOverlay
+        isVisible={overlayVisible}
+        status={overlayStatus}
+        txHash={overlayTxHash}
+        onDismiss={() => setOverlayVisible(false)}
+      />
     </div>
   );
 }

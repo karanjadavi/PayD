@@ -12,6 +12,7 @@ import {
   type ConversionPath,
 } from '../services/crossAssetPayment';
 import { ContractErrorPanel } from '../components/ContractErrorPanel';
+import { IssuerMultisigBanner } from '../components/IssuerMultisigBanner';
 import { parseContractError, type ContractErrorDetail } from '../utils/contractErrorParser';
 import { TransactionPendingOverlay } from '../components/TransactionPendingOverlay';
 
@@ -200,6 +201,8 @@ export default function CrossAssetPayment() {
             </span>
           )}
         </header>
+
+        <IssuerMultisigBanner />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Payment Form */}

@@ -22,6 +22,9 @@ pub struct RecipientShare {
 
 pub const TOTAL_BASIS_POINTS: u32 = 10000; // 100%
 
+const PERSISTENT_TTL_THRESHOLD: u32 = 20_000;
+const PERSISTENT_TTL_EXTEND_TO: u32 = 120_000;
+
 #[contract]
 pub struct RevenueSplitContract;
 
@@ -31,17 +34,17 @@ impl RevenueSplitContract {
 
     /// Returns the human-readable contract name (SEP-0034).
     pub fn name(env: Env) -> String {
-        String::from_str(&env, "PayD Revenue Split")
+        String::from_str(&env, env!("CARGO_PKG_NAME"))
     }
 
     /// Returns the contract version string (SEP-0034).
     pub fn version(env: Env) -> String {
-        String::from_str(&env, "0.0.1")
+        String::from_str(&env, env!("CARGO_PKG_VERSION"))
     }
 
     /// Returns the contract author / organization (SEP-0034).
     pub fn author(env: Env) -> String {
-        String::from_str(&env, "The Aha Company")
+        String::from_str(&env, env!("CARGO_PKG_AUTHORS"))
     }
 
     /// Initialize the contract with an admin and an initial set of recipients/shares.

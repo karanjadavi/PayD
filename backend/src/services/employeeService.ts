@@ -118,6 +118,7 @@ export class EmployeeService {
     const {
       page = 1,
       limit = 10,
+      q,
       search,
       status,
       department,
@@ -129,9 +130,18 @@ export class EmployeeService {
       sort_by = 'created_at',
       sort_order = 'desc',
     } = params;
+    // `q` is the canonical search param; `search` is kept for backwards compatibility
+    const searchTerm = q ?? search;
     const offset = (page - 1) * limit;
 
-    const allowedSortColumns = ['created_at', 'first_name', 'last_name', 'email', 'hire_date', 'base_salary'];
+    const allowedSortColumns = [
+      'created_at',
+      'first_name',
+      'last_name',
+      'email',
+      'hire_date',
+      'base_salary',
+    ];
     const sortColumn = allowedSortColumns.includes(sort_by) ? sort_by : 'created_at';
     const sortDirection = sort_order === 'asc' ? 'ASC' : 'DESC';
 
@@ -155,13 +165,13 @@ export class EmployeeService {
     }
 
     let ftsParamIndex: number | null = null;
-    if (search) {
+    if (searchTerm) {
       ftsParamIndex = paramIndex;
       whereClause += ` AND (
         search_vector @@ plainto_tsquery('english', $${paramIndex})
         OR wallet_address ILIKE $${paramIndex + 1}
       )`;
-      values.push(search, `%${search}%`);
+      values.push(searchTerm, `%${searchTerm}%`);
       paramIndex += 2;
     }
 
@@ -190,9 +200,10 @@ export class EmployeeService {
       values.push(salary_max);
     }
 
-    const orderBy = ftsParamIndex !== null
-      ? `ORDER BY ts_rank(search_vector, plainto_tsquery('english', $${ftsParamIndex})) DESC, ${sortColumn} ${sortDirection}`
-      : `ORDER BY ${sortColumn} ${sortDirection}`;
+    const orderBy =
+      ftsParamIndex !== null
+        ? `ORDER BY ts_rank(search_vector, plainto_tsquery('english', $${ftsParamIndex})) DESC, ${sortColumn} ${sortDirection}`
+        : `ORDER BY ${sortColumn} ${sortDirection}`;
 
     const query = `
       SELECT *, count(*) OVER() as total_count

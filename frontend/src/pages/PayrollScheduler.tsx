@@ -1,21 +1,27 @@
+import { Button, Card, Heading, Input, Select, Text } from '@stellar/design-system';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+// Type assertion for Stellar components to work around library typing issues
+const InputComponent = Input as unknown as React.FC<Record<string, unknown>>;
+const SelectComponent = Select as unknown as React.FC<Record<string, unknown>>;
+
+import { AccessibleDatePicker } from '../components/AccessibleDatePicker';
 import { AutosaveIndicator } from '../components/AutosaveIndicator';
-import { useAutosave } from '../hooks/useAutosave';
-import { useTransactionSimulation } from '../hooks/useTransactionSimulation';
+import { BulkPaymentStatusTracker } from '../components/BulkPaymentStatusTracker';
+import { CountdownTimer } from '../components/CountdownTimer';
+import { SchedulingWizard } from '../components/SchedulingWizard';
 import { TransactionSimulationPanel } from '../components/TransactionSimulationPanel';
+import { useAutosave } from '../hooks/useAutosave';
 import { useNotification } from '../hooks/useNotification';
 import { useSocket } from '../hooks/useSocket';
+import { useTransactionSimulation } from '../hooks/useTransactionSimulation';
 import { createClaimableBalanceTransaction, generateWallet } from '../services/stellar';
-import { useTranslation } from 'react-i18next';
-import { Card, Heading, Text, Button, Input, Select } from '@stellar/design-system';
-import { SchedulingWizard } from '../components/SchedulingWizard';
-import { CountdownTimer } from '../components/CountdownTimer';
-import { BulkPaymentStatusTracker } from '../components/BulkPaymentStatusTracker';
-import { TransactionPendingOverlay } from '../components/TransactionPendingOverlay';
 
 import { ContractErrorPanel } from '../components/ContractErrorPanel';
-import { parseContractError, type ContractErrorDetail } from '../utils/contractErrorParser';
+import { IssuerMultisigBanner } from '../components/IssuerMultisigBanner';
 import { HelpLink } from '../components/HelpLink';
+import { parseContractError, type ContractErrorDetail } from '../utils/contractErrorParser';
 
 interface PayrollFormState {
   employeeName: string;
@@ -109,7 +115,16 @@ function computeNextRunDate(config: SchedulingConfig, from: Date = new Date()): 
 
 const formatDate = (dateString: string) => {
   if (!dateString) return 'N/A';
-  const date = new Date(dateString);
+
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateString);
+  const date = dateOnlyMatch
+    ? new Date(
+        Number.parseInt(dateOnlyMatch[1], 10),
+        Number.parseInt(dateOnlyMatch[2], 10) - 1,
+        Number.parseInt(dateOnlyMatch[3], 10)
+      )
+    : new Date(dateString);
+
   if (isNaN(date.getTime())) return dateString;
   return date.toLocaleDateString('en-US', {
     month: 'short',
@@ -138,6 +153,13 @@ const initialFormState: PayrollFormState = {
   frequency: 'monthly',
   startDate: '',
   memo: '',
+};
+
+const formatLocalDateInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 export default function PayrollScheduler() {
@@ -238,6 +260,14 @@ export default function PayrollScheduler() {
     }
   };
 
+  const handleStartDateChange = (value: string) => {
+    setFormData((prev) => ({ ...prev, startDate: value }));
+    if (simulationResult) {
+      resetSimulation();
+      setContractError(null);
+    }
+  };
+
   useEffect(() => {
     if (!socket) return;
 
@@ -314,7 +344,7 @@ export default function PayrollScheduler() {
         id: Math.random().toString(36).substr(2, 9),
         employeeName: formData.employeeName,
         amount: formData.amount,
-        dateScheduled: formData.startDate || new Date().toISOString().split('T')[0],
+        dateScheduled: formData.startDate || formatLocalDateInput(new Date()),
         claimantPublicKey: mockRecipientPublicKey,
         status: 'Pending Claim',
       };
@@ -430,6 +460,8 @@ export default function PayrollScheduler() {
         </div>
       </div>
 
+      <IssuerMultisigBanner />
+
       {activeSchedule && (
         <div className="w-full mb-12 bg-black/20 border border-success/30 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1 h-full bg-success"></div>
@@ -480,7 +512,7 @@ export default function PayrollScheduler() {
               className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 card glass noise"
             >
               <div className="md:col-span-2">
-                <Input
+                <InputComponent
                   id="employeeName"
                   fieldSize="md"
                   label={t('payroll.employeeName', 'Employee Name')}
@@ -492,7 +524,7 @@ export default function PayrollScheduler() {
               </div>
 
               <div>
-                <Input
+                <InputComponent
                   id="amount"
                   fieldSize="md"
                   label={t('payroll.amountLabel', 'Amount (USD equivalent)')}
@@ -504,7 +536,7 @@ export default function PayrollScheduler() {
               </div>
 
               <div>
-                <Select
+                <SelectComponent
                   id="frequency"
                   fieldSize="md"
                   label={t('payroll.distributionFrequency', 'Distribution Frequency')}
@@ -514,18 +546,18 @@ export default function PayrollScheduler() {
                 >
                   <option value="weekly">{t('payroll.frequencyWeekly', 'Weekly')}</option>
                   <option value="monthly">{t('payroll.frequencyMonthly', 'Monthly')}</option>
-                </Select>
+                </SelectComponent>
               </div>
 
               <div className="md:col-span-2">
-                <Input
+                <AccessibleDatePicker
                   id="startDate"
-                  fieldSize="md"
                   label={t('payroll.commencementDate', 'Commencement Date')}
-                  name="startDate"
-                  type="date"
                   value={formData.startDate}
-                  onChange={handleChange}
+                  onChange={handleStartDateChange}
+                  minDate={formatLocalDateInput(new Date())}
+                  required={true}
+                  helpText="Select the date when payroll will commence (must be today or later)"
                 />
               </div>
 

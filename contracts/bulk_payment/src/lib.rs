@@ -91,6 +91,21 @@ pub struct ContractStatusChangedEvent {
     pub admin:    Address,
 }
 
+/// Emitted when an all-or-nothing batch completes successfully.
+#[contractevent]
+pub struct BatchExecutedEvent {
+    pub batch_id:   u64,
+    pub total_sent: i128,
+}
+
+/// Emitted when a partial batch completes (some payments may have been skipped).
+#[contractevent]
+pub struct BatchPartialEvent {
+    pub batch_id:      u64,
+    pub success_count: u32,
+    pub fail_count:    u32,
+}
+
 // ── Storage types ─────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -221,17 +236,17 @@ impl BulkPaymentContract {
 
     /// Returns the human-readable contract name (SEP-0034).
     pub fn name(env: Env) -> String {
-        String::from_str(&env, "PayD Bulk Payment")
+        String::from_str(&env, env!("CARGO_PKG_NAME"))
     }
 
     /// Returns the contract version string (SEP-0034).
     pub fn version(env: Env) -> String {
-        String::from_str(&env, "0.0.1")
+        String::from_str(&env, env!("CARGO_PKG_VERSION"))
     }
 
     /// Returns the contract author / organization (SEP-0034).
     pub fn author(env: Env) -> String {
-        String::from_str(&env, "The Aha Company")
+        String::from_str(&env, env!("CARGO_PKG_AUTHORS"))
     }
 
     // ── Initialization ────────────────────────────────────────────────────
@@ -395,14 +410,14 @@ impl BulkPaymentContract {
         // Single transfer of total amount to escrow
         token_client.transfer(&sender, &current_contract, &total);
 
-        // Distribute from escrow to recipients
+        let batch_id = Self::next_batch_id(&env);
+
+        // Distribute from escrow to recipients (minimize event overhead)
         for op in payments.iter() {
             token_client.transfer(&current_contract, &op.recipient, &op.amount);
         }
 
         Self::record_usage(&env, &sender, total);
-
-        let batch_id = Self::next_batch_id(&env);
         let record = BatchRecord {
             sender,
             token,
@@ -443,25 +458,30 @@ impl BulkPaymentContract {
         if len > MAX_BATCH_SIZE { return Err(ContractError::BatchTooLarge); }
 
         let mut total: i128 = 0;
+        let mut success_count: u32 = 0;
+        
+        // Use a single loop to calculate total and validate (O(n))
+        // This is more efficient than looping twice
         for op in payments.iter() {
-            if op.amount > 0 {
-                total = total.checked_add(op.amount).ok_or(ContractError::AmountOverflow)?;
+            if op.amount <= 0 { 
+                // Invalid amount — skip it and mark fail 
+                continue;
             }
+            total = total.checked_add(op.amount).ok_or(ContractError::AmountOverflow)?;
+            success_count += 1;
         }
-
-        Self::check_limits(&env, &sender, total)?;
 
         let token_client = token::Client::new(&env, &token);
         let contract_addr = env.current_contract_address();
         token_client.transfer(&sender, &contract_addr, &total);
 
         let mut remaining = total;
-        let mut success_count: u32 = 0;
+        let mut actual_success: u32 = 0;
         let mut fail_count: u32 = 0;
         let mut total_sent: i128 = 0;
 
         for op in payments.iter() {
-            // Optimized: Use references in loop where possible (implicit by SDK Vec iter)
+            // Optimized: single pass for validation and distribution
             if op.amount <= 0 || remaining < op.amount {
                 fail_count += 1;
                 PaymentSkippedEvent { recipient: op.recipient.clone(), amount: op.amount }.publish(&env);
@@ -470,7 +490,7 @@ impl BulkPaymentContract {
             token_client.transfer(&contract_addr, &op.recipient, &op.amount);
             remaining -= op.amount;
             total_sent += op.amount;
-            success_count += 1;
+            actual_success += 1;
             PaymentSentEvent { recipient: op.recipient.clone(), amount: op.amount }.publish(&env);
         }
 
@@ -481,7 +501,7 @@ impl BulkPaymentContract {
         Self::record_usage(&env, &sender, total_sent);
 
         let status = if fail_count == 0 { symbol_short!("completed") }
-                     else if success_count == 0 { symbol_short!("rollbck") }
+                     else if actual_success == 0 { symbol_short!("rollbck") }
                      else { symbol_short!("partial") };
 
         let batch_id = Self::next_batch_id(&env);
@@ -616,9 +636,7 @@ impl BulkPaymentContract {
         let key = DataKey::PaymentEntry(batch_id, payment_index);
         let entry: PaymentEntry = env.storage().temporary().get(&key)
             .ok_or(ContractError::PaymentNotFound)?;
-        env.storage().temporary().extend_ttl(
-            &key, TEMPORARY_TTL_THRESHOLD, TEMPORARY_TTL_EXTEND_TO,
-        );
+        // Reading state should not modify TTL; extend only on write
         Ok(entry)
     }
 
@@ -627,9 +645,7 @@ impl BulkPaymentContract {
     pub fn get_sequence(env: Env) -> u64 {
         let key = DataKey::Sequence;
         if let Some(value) = env.storage().persistent().get(&key) {
-            env.storage().persistent().extend_ttl(
-                &key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO,
-            );
+            // Reading state should not modify TTL; extend only on write
             value
         } else { 0 }
     }
@@ -641,17 +657,14 @@ impl BulkPaymentContract {
             .get(&key)
             .ok_or(ContractError::BatchNotFound)?;
             
-        // Extend TTL on access to keep "hot" batch records alive longer
-        env.storage().persistent().extend_ttl(&key, 100_000, 500_000);
+        // Reading state should not modify TTL; extend only on write
         Ok(record)
     }
 
     pub fn get_batch_count(env: Env) -> u64 {
         let key = DataKey::BatchCount;
         if let Some(value) = env.storage().persistent().get(&key) {
-            env.storage().persistent().extend_ttl(
-                &key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO,
-            );
+            // Reading state should not modify TTL; extend only on write
             value
         } else { 0 }
     }

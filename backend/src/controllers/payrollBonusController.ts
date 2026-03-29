@@ -11,7 +11,8 @@ export class PayrollBonusController {
 
       if (!organizationId || !periodStart || !periodEnd) {
         res.status(400).json({
-          error: 'Missing required fields: periodStart, periodEnd (user must belong to an organization)',
+          error:
+            'Missing required fields: periodStart, periodEnd (user must belong to an organization)',
         });
         return;
       }
@@ -104,7 +105,7 @@ export class PayrollBonusController {
 
   static async addBonusItem(req: Request, res: Response): Promise<void> {
     try {
-      const { payrollRunId, employeeId, amount, description } = req.body;
+      const { payrollRunId, employeeId, amount, description, metadata } = req.body;
       const organizationId = req.user?.organizationId;
 
       if (!payrollRunId || !employeeId || !amount) {
@@ -126,6 +127,7 @@ export class PayrollBonusController {
         employee_id: employeeId,
         amount,
         description,
+        metadata,
       });
 
       // Log audit entry for bonus item addition
@@ -142,6 +144,7 @@ export class PayrollBonusController {
           userAgent: req.get('user-agent'),
           itemType: 'bonus',
           description,
+          payoutMetadata: metadata,
         }
       );
 
@@ -190,6 +193,7 @@ export class PayrollBonusController {
         employee_id: item.employeeId,
         amount: item.amount,
         description: item.description,
+        metadata: item.metadata,
       }));
 
       const insertedItems = await PayrollBonusService.addBatchBonusItems(
@@ -201,7 +205,7 @@ export class PayrollBonusController {
       for (let i = 0; i < insertedItems.length; i++) {
         const item = insertedItems[i]!;
         const originalItem = items[i]!;
-        
+
         await PayrollAuditService.logItemAdded(
           organizationId!,
           payrollRunId,
@@ -215,6 +219,7 @@ export class PayrollBonusController {
             userAgent: req.get('user-agent'),
             itemType: 'bonus',
             description: originalItem.description,
+            payoutMetadata: originalItem.metadata,
           }
         );
       }
@@ -299,7 +304,10 @@ export class PayrollBonusController {
         return;
       }
 
-      const payrollRun = await PayrollBonusService.updatePayrollRunStatus(parseInt(id as string, 10), status);
+      const payrollRun = await PayrollBonusService.updatePayrollRunStatus(
+        parseInt(id as string, 10),
+        status
+      );
 
       if (!payrollRun) {
         res.status(404).json({ error: 'Payroll run not found' });

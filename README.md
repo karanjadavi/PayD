@@ -3,6 +3,11 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Stellar](https://img.shields.io/badge/Powered%20by-Stellar-7B68EE)](https://www.stellar.org/)
 
+## License
+
+PayD is available under the [MIT License](LICENSE).
+Copyright (c) 2026 The Aha Company.
+
 ## 🧩 Project Summary
 
 PayD is a revolutionary payroll system that enables organizations to pay employees, contractors, and partners across different countries using blockchain-based digital assets. By leveraging Stellar's fast, low-cost network, PayD replaces traditional banking rails with near-instant, transparent, and cost-effective payments.
@@ -52,30 +57,29 @@ PayD utilizes Stellar's asset issuance capabilities to create organization-speci
 
 ### Example Asset: ORGUSD
 
-- **Issuer Account**: Controlled by the organization
-- **Backing**: 1:1 with USD (or other stable currencies)
-- **Distribution**: Through organization's distribution account
-- **Trustlines**: Employees must accept the asset to receive payments
+- **Issuer Account**: Controlled by the organiza
 
-### Stellar Concepts Employed
+---
 
-- **Asset Issuance**: Creating custom tokens for payroll
-- **Distribution Accounts**: Managing bulk payments
-- **Trustlines**: Employee wallet acceptance
-- **Anchors**: Local currency conversion
-- **Fast Settlement**: Sub-5 second transaction finality
+## 📚 Contribution Reward (Bounty) Program
 
-## ⚙️ Core Features
+We value community contributions! High‑priority issues may carry a bounty to recognize and reward contributors.
 
-### 1️⃣ Employer Dashboard
+### Eligible Contributions
+- **Bug fixes** for critical bugs affecting core payroll flows.
+- **Feature implementations** that align with the roadmap and have been approved as high priority.
+- **Documentation improvements** that significantly enhance onboarding or user guidance for bounty‑eligible issues.
 
-- **Employee Management**: Add/remove employees with wallet addresses
-- **Salary Configuration**: Set amounts, frequencies (weekly/monthly)
-- **Bulk Upload**: CSV import for payroll lists
-- **Payment Scheduling**: Automated recurring payments
-- **Analytics**: Payroll history, total costs, FX tracking
+### Claim Process
+1. **Work on an issue** labeled with the `bounty` tag.
+2. **Submit a pull request** that resolves the issue and passes all CI checks.
+3. **Add a comment** on the issue with the PR link, stating you are claiming the bounty.
+4. **Project maintainers** will review the contribution. If approved, the reward will be transferred via the project's Stellar wallet.
 
-### 2️⃣ Employee Portal
+### Reward Details
+- Rewards are paid in **XLM** (Stellar Lumens) or a stable asset of the project's choosing.
+- Amounts vary per issue and are defined in the issue description.
+- Payments are processed within 7 business days after PR merge.
 
 - **Salary Tracking**: View incoming payments
 - **Transaction History**: Complete on-chain records
@@ -89,14 +93,15 @@ PayD utilizes Stellar's asset issuance capabilities to create organization-speci
 
 1. Checks scheduled payments at designated times
 2. Verifies employer account balance and authorization
-3. Signs and submits Stellar transactions
-4. Processes bulk payments efficiently
-5. Logs all transactions in database
-6. Sends notifications to employees
+3. Runs preflight `simulateTransaction` checks before wallet signature prompts
+4. Signs and submits Stellar transactions only after simulation passes
+5. Processes bulk payments efficiently
+6. Logs all transactions in database
+7. Sends notifications to employees
 
 ### 4️⃣ FX & Conversion System
 
-- **Real-time Rates**: Live asset-to-fiat conversion
+- **Real-time Rates**: Live asset-to-fiat conversion (see our [FX Rate Fetching Logic](docs/FX_RATE_FETCHING_LOGIC.md) for details on fallback and caching architecture).
 - **Anchor Fees**: Transparent withdrawal costs
 - **Network Fees**: Minimal Stellar transaction fees
 - **Multi-currency Support**: Support for various local currencies
@@ -116,10 +121,6 @@ Every payment includes:
 
 - **React 19** - Modern UI framework
 - **TypeScript** - Type-safe development
-- **Vite** - Fast build tool
-- **Stellar Design System** - Consistent UI components
-- **React Router** - Client-side routing
-- **TanStack Query** - Data fetching and caching
 
 ### Backend
 
@@ -168,6 +169,13 @@ Start PayD locally in three steps:
 
 Need the full setup? Keep reading for prerequisites, environment variables, and database setup.
 
+For cloud hosting instructions, see the deployment guide:
+
+- [Vercel + Render Deployment Guide](docs/DEPLOYMENT_GUIDE_VERCEL_RENDER.md)
+- [Staging Environment Known Issues](docs/STAGING_ISSUES.md)
+- [Local Contract Bootstrap](docs/LOCAL_CONTRACT_BOOTSTRAP.md)
+- [Filenaming Conventions](docs/FILENAMING_CONVENTIONS.md)
+
 ## Getting Started
 
 ### Prerequisites
@@ -183,28 +191,32 @@ Ensure you have the following installed:
 ### Installation
 
 1. **Clone the repository:**
+
    ```bash
    git clone https://github.com/Gildado/PayD.git
    cd PayD
    ```
 
 2. **Install dependencies:**
+
    ```bash
    npm install
    ```
 
 3. **Environment Setup:**
+
    ```bash
    cp .env.example .env
    ```
-   *Edit `.env` with your configuration.*
+
+   _Edit `.env` with your configuration._
 
 4. **Database Setup:**
    ```bash
    # Using Docker
    docker run --name payd-postgres -e POSTGRES_PASSWORD=mypassword -p 5432:5432 -d postgres:15
    ```
-   *Or set up PostgreSQL manually.*
+   _Or set up PostgreSQL manually._
 
 ### Configuration
 
@@ -228,17 +240,49 @@ JWT_SECRET=your_jwt_secret
 
 ### Development
 
+**Web app (`frontend/`):**
+
+- **Employer dashboard** — Sidebar layout and native XLM balance live under [`/employer`](http://localhost:5173/employer) (redirects to payroll). Set optional `VITE_ORG_DISPLAY_NAME` in `.env`.
+- **Theme** — Light/dark preference is stored in `localStorage` under the key `payd-theme` and synced across browser tabs.
+- **Issuer multisig** — Configured asset issuers (`VITE_*_ISSUER`) are checked against Horizon using the wallet’s network; payroll and cross-asset flows show a warning when multisig is required.
+
 Start the development server:
+
 ```bash
 npm run dev
 ```
 
 Build for production:
+
 ```bash
 npm run build
 ```
 
 Run tests:
+
 ```bash
 npm run test
 ```
+
+### Local Soroban Contracts
+
+If you want to build, deploy, and seed the local Soroban contracts in one pass,
+use the bootstrap helper:
+
+```bash
+python3 scripts/local_contract_bootstrap.py --dry-run
+```
+
+The script lives in [docs/LOCAL_CONTRACT_BOOTSTRAP.md](docs/LOCAL_CONTRACT_BOOTSTRAP.md)
+and can be run with `--contract` flags to limit the scope.
+
+## 🙌 Contributors
+
+We'd like to extend a huge thank you to everyone who has contributed to making PayD what it is today! For a full list of our amazing contributors, please see our [Contributors List](CONTRIBUTORS.md).
+
+[![All Contributors](https://img.shields.io/badge/all_contributors-2-orange.svg?style=flat-square)](#contributors)
+
+## Credits.
+
+Special thanks to the builders, reviewers, testers, and maintainers who have helped shape PayD.
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for the current list of recognized contributors and their contributions.

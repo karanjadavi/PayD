@@ -37,7 +37,7 @@ export class BalanceController {
    */
   static async checkBalance(req: Request, res: Response) {
     try {
-      const { accountId } = req.params;
+      const accountId = req.params.accountId as string;
       const assetCode = (req.query.assetCode as string | undefined) ?? 'ORGUSD';
       const explicitIssuer = req.query.assetIssuer as string | undefined;
 
@@ -89,8 +89,12 @@ export class BalanceController {
    */
   static async preflightPayroll(req: Request, res: Response) {
     try {
-      const { distributionAccount, assetCode, assetIssuer: explicitIssuer, payments } =
-        preflightSchema.parse(req.body);
+      const {
+        distributionAccount,
+        assetCode,
+        assetIssuer: explicitIssuer,
+        payments,
+      } = preflightSchema.parse(req.body);
 
       // Resolve issuer: explicit value > asset registry.
       let resolvedIssuer: string | null = null;

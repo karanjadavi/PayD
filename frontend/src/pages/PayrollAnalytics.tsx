@@ -89,7 +89,7 @@ async function fetchAnalytics(startDate: string, endDate: string): Promise<Analy
   };
 }
 
-// ── Chart colours ─────────────────────────────────────────────────────────────
+// ── Chart colors ──────────────────────────────────────────────────────────────
 
 const PIE_COLORS = ['#6366f1', '#22d3ee', '#f59e0b'];
 
@@ -131,195 +131,314 @@ export default function PayrollAnalytics() {
   });
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">Payroll Analytics</h1>
-        <p className="text-gray-600">Trends, currency distribution, and payment success metrics.</p>
-      </div>
-
-      {/* Date range filter */}
-      <Card>
-        <div className="p-4 flex flex-wrap gap-6 items-end">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="border border-gray-300 rounded-md p-2 text-sm bg-white text-gray-800"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="border border-gray-300 rounded-md p-2 text-sm bg-white text-gray-800"
-            />
-          </div>
+    <div className="flex w-full flex-1 flex-col items-center justify-start px-4 py-6 sm:px-6 lg:px-8">
+      <div className="w-full max-w-7xl space-y-6 sm:space-y-8">
+        <div className="card glass noise border-[var(--border-hi)] p-6 sm:p-8">
+          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[var(--muted)]">
+            Data Insights
+          </p>
+          <h1 className="mt-2 text-3xl sm:text-4xl font-black tracking-tight text-[var(--text)]">
+            Payroll <span className="text-[var(--accent)]">Analytics</span>
+          </h1>
+          <p className="mt-3 text-sm sm:text-base leading-6 text-[var(--muted)] max-w-3xl">
+            Comprehensive trends, currency distribution, and payment success metrics to help you
+            make informed decisions.
+          </p>
         </div>
-      </Card>
 
-      {/* Summary Cards */}
-      {data && (
-        <motion.div
-          className="grid grid-cols-1 md:grid-cols-3 gap-6"
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          <motion.div variants={cardVariants}>
-            <Card>
-              <div className="p-6">
-                <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">
-                  Total Payroll
-                </p>
-                <h3 className="text-3xl font-bold mt-1 text-indigo-500">
-                  ${data.trends.reduce((acc, curr) => acc + curr.total, 0).toLocaleString()}
-                </h3>
-                <p className="text-xs text-green-500 mt-2 flex items-center gap-1">
-                  <span>↑ 12%</span> vs last period
-                </p>
+        {/* Date range filter */}
+        <Card>
+          <div className="p-4 sm:p-6">
+            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[var(--muted)] mb-4">
+              Date Range Filter
+            </p>
+            <div className="flex flex-wrap gap-4 sm:gap-6 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label
+                  htmlFor="start-date"
+                  className="block text-sm font-semibold text-[var(--text)] mb-2"
+                >
+                  Start Date
+                </label>
+                <input
+                  id="start-date"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full border border-[var(--border)] rounded-xl p-3 text-sm bg-[var(--surface)] text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] transition"
+                  aria-label="Select start date for analytics"
+                />
               </div>
-            </Card>
-          </motion.div>
-          <motion.div variants={cardVariants}>
-            <Card>
-              <div className="p-6">
-                <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">
-                  Avg. Salary
-                </p>
-                <h3 className="text-3xl font-bold mt-1 text-cyan-500">$5,420</h3>
-                <p className="text-xs text-gray-400 mt-2">Across 42 employees</p>
+              <div className="flex-1 min-w-[200px]">
+                <label
+                  htmlFor="end-date"
+                  className="block text-sm font-semibold text-[var(--text)] mb-2"
+                >
+                  End Date
+                </label>
+                <input
+                  id="end-date"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full border border-[var(--border)] rounded-xl p-3 text-sm bg-[var(--surface)] text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] transition"
+                  aria-label="Select end date for analytics"
+                />
               </div>
-            </Card>
-          </motion.div>
-          <motion.div variants={cardVariants}>
-            <Card>
-              <div className="p-6">
-                <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">
-                  Payment Success
-                </p>
-                <h3 className="text-3xl font-bold mt-1 text-amber-500">98.4%</h3>
-                <p className="text-xs text-gray-400 mt-2">Historical average</p>
-              </div>
-            </Card>
-          </motion.div>
-        </motion.div>
-      )}
+            </div>
+          </div>
+        </Card>
 
-      {isLoading && <p className="text-center text-gray-500 py-12">Loading analytics…</p>}
-
-      {isError && <p className="text-center text-red-500 py-12">Failed to load analytics data.</p>}
-
-      {data && (
-        <motion.div
-          className="grid grid-cols-1 lg:grid-cols-2 gap-8"
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          {/* Line chart — payroll over time */}
-          <motion.div variants={cardVariants}>
-            <Card>
-              <div className="p-6">
-                <h2 className="text-lg font-semibold mb-4">Total Payroll Over Time</h2>
-                <ResponsiveContainer width="100%" height={280}>
-                  <LineChart data={data.trends}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                    <YAxis
-                      tick={{ fontSize: 12 }}
-                      tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip
-                      formatter={(v: RechartsValue) => [
-                        `$${Number(Array.isArray(v) ? v[0] : (v ?? 0)).toLocaleString()}`,
-                        'Total',
-                      ]}
-                    />
-                    <SafeLegend />
-                    <Line
-                      type="monotone"
-                      dataKey="total"
-                      name="Payroll Total"
-                      stroke="#6366f1"
-                      strokeWidth={2}
-                      dot={{ r: 4 }}
-                      activeDot={{ r: 6 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-          </motion.div>
-
-          {/* Pie chart — currency breakdown */}
-          <motion.div variants={cardVariants}>
-            <Card>
-              <div className="p-6">
-                <h2 className="text-lg font-semibold mb-4">Cost Breakdown by Currency</h2>
-                <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
-                    <Pie
-                      data={data.currencyBreakdown}
-                      dataKey="value"
-                      nameKey="currency"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      label={(props: PieLabelRenderProps) => {
-                        const d = props as PieLabelRenderProps & {
-                          currency?: string;
-                          value?: number;
-                        };
-                        return `${d.currency ?? ''} ${d.value ?? 0}%`;
-                      }}
+        {/* Summary Cards */}
+        {data && (
+          <motion.div
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6"
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            <motion.div variants={cardVariants}>
+              <Card>
+                <div className="p-6">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[var(--muted)]">
+                    Total Payroll
+                  </p>
+                  <h3 className="text-3xl sm:text-4xl font-black mt-2 text-[var(--accent)]">
+                    $
+                    {data.trends
+                      .reduce((acc: number, curr: PayrollTrend) => acc + curr.total, 0)
+                      .toLocaleString()}
+                  </h3>
+                  <p className="text-xs text-[var(--success)] mt-3 flex items-center gap-1">
+                    <svg
+                      className="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
                     >
-                      {data.currencyBreakdown.map((item) => (
-                        <Cell
-                          key={item.currency}
-                          fill={
-                            PIE_COLORS[data.currencyBreakdown.indexOf(item) % PIE_COLORS.length]
-                          }
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(v: RechartsValue) => [
-                        `${String(Array.isArray(v) ? v[0] : (v ?? 0))}%`,
-                        'Share',
-                      ]}
-                    />
-                    <SafeLegend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+                      />
+                    </svg>
+                    <span>12% vs last period</span>
+                  </p>
+                </div>
+              </Card>
+            </motion.div>
+            <motion.div variants={cardVariants}>
+              <Card>
+                <div className="p-6">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[var(--muted)]">
+                    Avg. Salary
+                  </p>
+                  <h3 className="text-3xl sm:text-4xl font-black mt-2 text-[var(--accent2)]">
+                    $5,420
+                  </h3>
+                  <p className="text-xs text-[var(--muted)] mt-3">Across 42 employees</p>
+                </div>
+              </Card>
+            </motion.div>
+            <motion.div variants={cardVariants} className="sm:col-span-2 lg:col-span-1">
+              <Card>
+                <div className="p-6">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[var(--muted)]">
+                    Payment Success
+                  </p>
+                  <h3 className="text-3xl sm:text-4xl font-black mt-2 text-[#f59e0b]">98.4%</h3>
+                  <p className="text-xs text-[var(--muted)] mt-3">Historical average</p>
+                </div>
+              </Card>
+            </motion.div>
           </motion.div>
+        )}
 
-          {/* Bar chart — success/failure rate */}
-          <motion.div variants={cardVariants} className="lg:col-span-2">
-            <Card>
-              <div className="p-6">
-                <h2 className="text-lg font-semibold mb-4">Payment Success / Failure Rate</h2>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={data.paymentMetrics}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <SafeLegend />
-                    <Bar dataKey="success" name="Successful" fill="#22d3ee" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="failure" name="Failed" fill="#f87171" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
+        {isLoading && (
+          <div className="text-center py-12">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[var(--border)] border-t-[var(--accent)]" />
+            <p className="mt-4 text-[var(--muted)]">Loading analytics…</p>
+          </div>
+        )}
+
+        {isError && (
+          <div className="text-center py-12">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[rgba(255,123,114,0.1)] border border-[rgba(255,123,114,0.2)] mb-4">
+              <svg
+                className="w-6 h-6 text-[var(--danger)]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </div>
+            <p className="text-[var(--danger)] font-semibold">Failed to load analytics data.</p>
+            <p className="text-[var(--muted)] text-sm mt-2">Please try again later.</p>
+          </div>
+        )}
+
+        {data && (
+          <motion.div
+            className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8"
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            {/* Line chart — payroll over time */}
+            <motion.div variants={cardVariants}>
+              <Card>
+                <div className="p-6">
+                  <h2 className="text-lg font-bold text-[var(--text)] mb-1">
+                    Total Payroll Over Time
+                  </h2>
+                  <p className="text-xs text-[var(--muted)] mb-4">
+                    Monthly payroll expenditure trends
+                  </p>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <LineChart data={data.trends}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis
+                        dataKey="month"
+                        tick={{ fontSize: 12, fill: 'var(--muted)' }}
+                        stroke="var(--border)"
+                      />
+                      <YAxis
+                        tick={{ fontSize: 12, fill: 'var(--muted)' }}
+                        tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
+                        stroke="var(--border)"
+                      />
+                      <Tooltip
+                        formatter={(v: RechartsValue) => [
+                          `$${Number(Array.isArray(v) ? v[0] : (v ?? 0)).toLocaleString()}`,
+                          'Total',
+                        ]}
+                        contentStyle={{
+                          backgroundColor: 'var(--surface)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '8px',
+                        }}
+                      />
+                      <SafeLegend />
+                      <Line
+                        type="monotone"
+                        dataKey="total"
+                        name="Payroll Total"
+                        stroke="#6366f1"
+                        strokeWidth={3}
+                        dot={{ r: 4, fill: '#6366f1' }}
+                        activeDot={{ r: 6 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </motion.div>
+
+            {/* Pie chart — currency breakdown */}
+            <motion.div variants={cardVariants}>
+              <Card>
+                <div className="p-6">
+                  <h2 className="text-lg font-bold text-[var(--text)] mb-1">
+                    Cost Breakdown by Currency
+                  </h2>
+                  <p className="text-xs text-[var(--muted)] mb-4">
+                    Distribution of payroll across different assets
+                  </p>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <PieChart>
+                      <Pie
+                        data={data.currencyBreakdown}
+                        dataKey="value"
+                        nameKey="currency"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={100}
+                        label={(props: PieLabelRenderProps) => {
+                          const d = props as PieLabelRenderProps & {
+                            currency?: string;
+                            value?: number;
+                          };
+                          return `${d.currency ?? ''} ${d.value ?? 0}%`;
+                        }}
+                      >
+                        {data.currencyBreakdown.map((item: CurrencyShare) => (
+                          <Cell
+                            key={item.currency}
+                            fill={
+                              PIE_COLORS[data.currencyBreakdown.indexOf(item) % PIE_COLORS.length]
+                            }
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(v: RechartsValue) => [
+                          `${String(Array.isArray(v) ? v[0] : (v ?? 0))}%`,
+                          'Share',
+                        ]}
+                        contentStyle={{
+                          backgroundColor: 'var(--surface)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '8px',
+                        }}
+                      />
+                      <SafeLegend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </motion.div>
+
+            {/* Bar chart — success/failure rate */}
+            <motion.div variants={cardVariants} className="lg:col-span-2">
+              <Card>
+                <div className="p-6">
+                  <h2 className="text-lg font-bold text-[var(--text)] mb-1">
+                    Payment Success / Failure Rate
+                  </h2>
+                  <p className="text-xs text-[var(--muted)] mb-4">
+                    Monthly transaction success and failure metrics
+                  </p>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={data.paymentMetrics}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis
+                        dataKey="month"
+                        tick={{ fontSize: 12, fill: 'var(--muted)' }}
+                        stroke="var(--border)"
+                      />
+                      <YAxis tick={{ fontSize: 12, fill: 'var(--muted)' }} stroke="var(--border)" />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'var(--surface)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '8px',
+                        }}
+                      />
+                      <SafeLegend />
+                      <Bar
+                        dataKey="success"
+                        name="Successful"
+                        fill="#22d3ee"
+                        radius={[4, 4, 0, 0]}
+                      />
+                      <Bar dataKey="failure" name="Failed" fill="#f87171" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </motion.div>
           </motion.div>
-        </motion.div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

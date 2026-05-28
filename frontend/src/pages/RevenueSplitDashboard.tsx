@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { ContractErrorPanel } from '../components/ContractErrorPanel';
+import { SkeletonLoader } from '../components/SkeletonLoader';
 import { parseContractError, type ContractErrorDetail } from '../utils/contractErrorParser';
 import { getTxExplorerUrl } from '../utils/stellarExpert';
 import { useNotification } from '../hooks/useNotification';
@@ -261,7 +262,19 @@ export default function RevenueSplitDashboard() {
       </div>
 
       {isLoading ? (
-        <p className="mb-6 text-sm text-zinc-400">Loading revenue split dashboard...</p>
+        <div className="mb-6 space-y-4" aria-label="Loading revenue split dashboard" role="status">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <div className="card glass noise xl:col-span-1 space-y-3 p-4">
+              <SkeletonLoader variant="text" width="1/2" />
+              <SkeletonLoader variant="chart" height={256} />
+              <SkeletonLoader variant="text" count={3} />
+            </div>
+            <div className="card glass noise xl:col-span-2 space-y-3 p-4">
+              <SkeletonLoader variant="text" width="1/3" />
+              <SkeletonLoader variant="card" count={3} height={12} />
+            </div>
+          </div>
+        </div>
       ) : null}
       {error ? <p className="mb-6 text-sm text-red-400">{error}</p> : null}
 

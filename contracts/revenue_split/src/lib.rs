@@ -1,9 +1,45 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, String, Vec};
+use soroban_sdk::{
+    contract, contractevent, contractimpl, contracttype, token, Address, Env, String, Vec,
+};
 
 #[cfg(test)]
 mod test;
+
+// ── Events ────────────────────────────────────────────────────────────────────
+
+/// Emitted when a distribution is executed successfully.
+#[contractevent]
+pub struct DistributedEvent {
+    pub token: Address,
+    pub from: Address,
+    pub total_amount: i128,
+    pub recipient_count: u32,
+}
+
+/// Emitted when the admin updates the recipient split configuration.
+#[contractevent]
+pub struct RecipientsUpdatedEvent {
+    pub admin: Address,
+    pub recipient_count: u32,
+}
+
+/// Emitted when the admin address is changed.
+#[contractevent]
+pub struct AdminChangedEvent {
+    pub old_admin: Address,
+    pub new_admin: Address,
+}
+
+/// Emitted when the contract pause state changes (circuit breaker).
+#[contractevent]
+pub struct PauseStateChangedEvent {
+    pub paused: bool,
+    pub admin: Address,
+}
+
+// ── Storage ───────────────────────────────────────────────────────────────────
 
 #[contracttype]
 pub enum DataKey {
@@ -13,6 +49,10 @@ pub enum DataKey {
     LastDistributeLedger,
     /// Cumulative amount distributed per token address.
     TotalDistributed(Address),
+    /// Circuit breaker flag — when true all distribute calls are rejected.
+    Paused,
+    /// Cumulative count of completed distributions.
+    DistributionCount,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,6 +106,9 @@ impl RevenueSplitContract {
         Self::validate_shares(&shares);
 
         env.storage().persistent().set(&DataKey::Admin, &admin);
+        env.storage()
+            .persistent()
+            .set(&DataKey::DistributionCount, &0u64);
         Self::store_recipients(&env, &shares);
         Self::bump_core_ttl(&env);
     }
@@ -92,6 +135,12 @@ impl RevenueSplitContract {
         admin.require_auth();
         env.storage().persistent().set(&DataKey::Admin, &new_admin);
         Self::bump_core_ttl(&env);
+
+        AdminChangedEvent {
+            old_admin: admin,
+            new_admin,
+        }
+        .publish(&env);
     }
 
     /// Updates the recipient splits dynamically (admin only).
@@ -99,30 +148,76 @@ impl RevenueSplitContract {
         let admin = Self::load_admin(&env);
         admin.require_auth();
         Self::validate_shares(&new_shares);
+        let recipient_count = new_shares.len();
         Self::store_recipients(&env, &new_shares);
         Self::bump_core_ttl(&env);
+
+        RecipientsUpdatedEvent {
+            admin,
+            recipient_count,
+        }
+        .publish(&env);
+    }
+
+    // ── Circuit breaker (Part 46) ─────────────────────────────────────────
+
+    /// Pauses or unpauses the contract (admin only).
+    ///
+    /// While paused, all `distribute` calls are rejected. Administrative
+    /// functions (`set_admin`, `update_recipients`, `bump_ttl`) remain
+    /// available so that the contract can be restored to a healthy state.
+    pub fn set_paused(env: Env, paused: bool) {
+        let admin = Self::load_admin(&env);
+        admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Paused, &paused);
+
+        PauseStateChangedEvent {
+            paused,
+            admin,
+        }
+        .publish(&env);
+    }
+
+    /// Returns `true` if the contract is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+    }
+
+    /// Returns the total number of completed distributions.
+    pub fn get_distribution_count(env: Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::DistributionCount)
+            .unwrap_or(0)
     }
 
     /// Distributes a specific token amount from a sender to the listed recipients based on their shares.
     ///
     /// ### Algorithm: Basis Points Distribution
     /// - Each recipient receives a portion calculated as: `(amount * basis_points) / 10000`.
-    /// - **Precision Management**: To ensure 100% of the funds are distributed and avoid 
-    ///   "dust" remaining in the sender's account due to rounding, the final recipient 
+    /// - **Precision Management**: To ensure 100% of the funds are distributed and avoid
+    ///   "dust" remaining in the sender's account due to rounding, the final recipient
     ///   in the list automatically absorbs any remainders.
     ///
     /// ### Requirements
     /// - `from` must authorize the transaction.
-    /// - Must be the only distribution in this ledger (Replay protection).
+    /// - Contract must not be paused (circuit breaker).
+    /// - Must be the only distribution in this ledger (replay protection).
     pub fn distribute(env: Env, token: Address, from: Address, amount: i128) {
         if amount <= 0 {
             return;
         }
 
+        Self::require_not_paused(&env);
         from.require_auth();
         Self::require_unique_ledger(&env);
 
         let shares = Self::load_recipients(&env);
+        let recipient_count = shares.len();
         let preview = Self::build_distribution_preview(&env, &shares, amount);
         let client = token::Client::new(&env, &token);
 
@@ -141,6 +236,30 @@ impl RevenueSplitContract {
             PERSISTENT_TTL_THRESHOLD,
             PERSISTENT_TTL_EXTEND_TO,
         );
+
+        // Increment distribution counter
+        let count: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::DistributionCount)
+            .unwrap_or(0)
+            + 1;
+        env.storage()
+            .persistent()
+            .set(&DataKey::DistributionCount, &count);
+        env.storage().persistent().extend_ttl(
+            &DataKey::DistributionCount,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        DistributedEvent {
+            token,
+            from,
+            total_amount: amount,
+            recipient_count,
+        }
+        .publish(&env);
     }
 
     /// Returns the ledger sequence of the last successful distribution.
@@ -160,13 +279,28 @@ impl RevenueSplitContract {
             .unwrap_or(0)
     }
 
+    /// Extends TTL for all critical contract state (admin only).
+    pub fn bump_ttl(env: Env) {
+        let admin = Self::load_admin(&env);
+        admin.require_auth();
+        Self::bump_core_ttl(&env);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────
+
+    fn require_not_paused(env: &Env) {
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
+        if paused {
+            panic!("Contract is paused");
+        }
+    }
+
     /// Ensures a distribution has not already been executed in the current ledger
     /// sequence, preventing replay attacks.
-    ///
-    /// This mechanism uses the unique ledger sequence provided by the Soroban environment 
-    /// to ensure that the `distribute` function cannot be called more than once per 
-    /// ledger for this specific contract instance. This is a critical security 
-    /// measure for deterministic payout logic.
     fn require_unique_ledger(env: &Env) {
         let current_ledger = env.ledger().sequence();
         let last_ledger: u32 = env
@@ -255,11 +389,8 @@ impl RevenueSplitContract {
 
     /// Internal helper to calculate the distribution of an amount across recipients.
     ///
-    /// ### Algorithm: Basis Points Distribution
-    /// - Each recipient receives a portion calculated as: `(amount * basis_points) / 10000`.
-    /// - **Precision Management**: To ensure 100% of the funds are distributed and avoid 
-    ///   "dust" remaining in the sender's account due to rounding, the final recipient 
-    ///   in the list automatically absorbs any remainders (`amount - amount_distributed`).
+    /// The final recipient absorbs any rounding remainder to ensure 100% of
+    /// the funds are distributed.
     fn build_distribution_preview(
         env: &Env,
         shares: &Vec<RecipientShare>,
@@ -294,7 +425,11 @@ impl RevenueSplitContract {
     }
 
     fn bump_core_ttl(env: &Env) {
-        for key in [DataKey::Admin, DataKey::Recipients] {
+        for key in [
+            DataKey::Admin,
+            DataKey::Recipients,
+            DataKey::DistributionCount,
+        ] {
             if env.storage().persistent().has(&key) {
                 env.storage().persistent().extend_ttl(
                     &key,
@@ -304,4 +439,5 @@ impl RevenueSplitContract {
             }
         }
     }
+
 }

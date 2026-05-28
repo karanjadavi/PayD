@@ -5,6 +5,26 @@ use soroban_sdk::{
     String, Symbol,
 };
 
+/// Emitted when the current admin proposes a new admin (two-step transfer).
+#[contractevent]
+pub struct AdminTransferProposedEvent {
+    pub current_admin: Address,
+    pub proposed_admin: Address,
+}
+
+/// Emitted when the proposed admin accepts the transfer and becomes the new admin.
+#[contractevent]
+pub struct AdminTransferAcceptedEvent {
+    pub old_admin: Address,
+    pub new_admin: Address,
+}
+
+/// Emitted when the current admin cancels a pending admin transfer.
+#[contractevent]
+pub struct AdminTransferCancelledEvent {
+    pub admin: Address,
+}
+
 // ── Events ────────────────────────────────────────────────────────────────────
 
 #[contractevent]
@@ -46,6 +66,8 @@ pub enum DataKey {
     PaymentCount,
     /// Tracks the last ledger sequence in which a payment was initiated (per sender).
     LastPaymentLedger(Address),
+    /// Proposed next admin awaiting acceptance (two-step admin transfer).
+    PendingAdmin,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,6 +123,95 @@ impl CrossAssetPaymentContract {
     pub fn bump_ttl(env: Env) {
         Self::require_admin(&env);
         Self::bump_core_ttl(&env);
+    }
+
+    // ── Two-step admin transfer (Issue #192 / Part 47) ────────────────────
+
+    /// Proposes a new admin address. The current admin must authorize this call.
+    ///
+    /// The proposed admin must then call `accept_admin_transfer` to complete
+    /// the handoff. Only one pending transfer can exist at a time; calling this
+    /// again replaces the previous proposal.
+    pub fn propose_admin_transfer(env: Env, new_admin: Address) {
+        let current_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        current_admin.require_auth();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::PendingAdmin, &new_admin);
+        env.storage().persistent().extend_ttl(
+            &DataKey::PendingAdmin,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        AdminTransferProposedEvent {
+            current_admin,
+            proposed_admin: new_admin,
+        }
+        .publish(&env);
+    }
+
+    /// Accepts the pending admin transfer. Must be called by the proposed admin.
+    ///
+    /// On success the caller becomes the new admin and the pending proposal is
+    /// cleared, completing the two-step handoff.
+    pub fn accept_admin_transfer(env: Env, new_admin: Address) {
+        let pending: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingAdmin)
+            .expect("No pending admin transfer");
+
+        if pending != new_admin {
+            panic!("Caller is not the proposed admin");
+        }
+
+        new_admin.require_auth();
+
+        let old_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Admin, &new_admin);
+        env.storage().persistent().remove(&DataKey::PendingAdmin);
+        Self::bump_core_ttl(&env);
+
+        AdminTransferAcceptedEvent {
+            old_admin,
+            new_admin,
+        }
+        .publish(&env);
+    }
+
+    /// Cancels the pending admin transfer proposal. Only the current admin may call this.
+    pub fn cancel_admin_transfer(env: Env) {
+        let current_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        current_admin.require_auth();
+
+        env.storage().persistent().remove(&DataKey::PendingAdmin);
+
+        AdminTransferCancelledEvent {
+            admin: current_admin,
+        }
+        .publish(&env);
+    }
+
+    /// Returns the pending admin address if a transfer has been proposed, or `None`.
+    pub fn get_pending_admin(env: Env) -> Option<Address> {
+        env.storage().persistent().get(&DataKey::PendingAdmin)
     }
 
     /// Initiates a cross-asset payment and escrows the source asset in the contract.

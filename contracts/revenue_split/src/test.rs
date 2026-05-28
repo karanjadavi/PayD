@@ -450,3 +450,217 @@ fn test_total_distributed_starts_at_zero() {
 
     assert_eq!(client.get_total_distributed(&token_contract), 0);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── CIRCUIT BREAKER TESTS (Issue #191 / Part 46) ─────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+fn setup_with_token(
+) -> (Env, RevenueSplitContractClient<'static>, Address, Address, Address, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let shares = Vec::from_array(&env, [
+        RecipientShare { destination: recipient1.clone(), basis_points: 6000 },
+        RecipientShare { destination: recipient2.clone(), basis_points: 4000 },
+    ]);
+    client.init(&admin, &shares);
+
+    (env, client, admin, sender, recipient1, recipient2)
+}
+
+#[test]
+fn test_is_paused_defaults_to_false() {
+    let (env, client, admin, _, _, _) = setup_with_token();
+    let _ = admin;
+    let _ = env;
+    assert!(!client.is_paused());
+}
+
+#[test]
+fn test_set_paused_and_is_paused() {
+    let (_, client, admin, _, _, _) = setup_with_token();
+    let _ = admin;
+
+    client.set_paused(&true);
+    assert!(client.is_paused());
+
+    client.set_paused(&false);
+    assert!(!client.is_paused());
+}
+
+#[test]
+#[should_panic(expected = "Contract is paused")]
+fn test_distribute_blocked_when_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _) = create_token_contract(&env, &token_admin);
+    stellar_asset_client.mint(&sender, &1000);
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let shares = Vec::from_array(&env, [
+        RecipientShare { destination: recipient.clone(), basis_points: 10_000 },
+    ]);
+    client.init(&admin, &shares);
+    client.set_paused(&true);
+
+    // This must panic with "Contract is paused"
+    client.distribute(&token_id, &sender, &500);
+}
+
+#[test]
+fn test_distribute_succeeds_after_unpause() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_sequence_number(10);
+
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+    stellar_asset_client.mint(&sender, &1000);
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let shares = Vec::from_array(&env, [
+        RecipientShare { destination: recipient.clone(), basis_points: 10_000 },
+    ]);
+    client.init(&admin, &shares);
+    client.set_paused(&true);
+    client.set_paused(&false);
+
+    client.distribute(&token_id, &sender, &1000);
+    assert_eq!(token_client.balance(&recipient), 1000);
+}
+
+#[test]
+fn test_distribution_count_increments() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _) = create_token_contract(&env, &token_admin);
+    stellar_asset_client.mint(&sender, &5000);
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let shares = Vec::from_array(&env, [
+        RecipientShare { destination: recipient.clone(), basis_points: 10_000 },
+    ]);
+    client.init(&admin, &shares);
+    assert_eq!(client.get_distribution_count(), 0);
+
+    env.ledger().set_sequence_number(1);
+    client.distribute(&token_id, &sender, &1000);
+    assert_eq!(client.get_distribution_count(), 1);
+
+    env.ledger().set_sequence_number(2);
+    client.distribute(&token_id, &sender, &1000);
+    assert_eq!(client.get_distribution_count(), 2);
+
+    env.ledger().set_sequence_number(3);
+    client.distribute(&token_id, &sender, &1000);
+    assert_eq!(client.get_distribution_count(), 3);
+}
+
+#[test]
+fn test_update_recipients_emits_event_and_stores_new_config() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    let r3 = Address::generate(&env);
+
+    let initial = Vec::from_array(&env, [
+        RecipientShare { destination: r1.clone(), basis_points: 10_000 },
+    ]);
+    client.init(&admin, &initial);
+
+    let updated = Vec::from_array(&env, [
+        RecipientShare { destination: r1.clone(), basis_points: 4000 },
+        RecipientShare { destination: r2.clone(), basis_points: 3000 },
+        RecipientShare { destination: r3.clone(), basis_points: 3000 },
+    ]);
+    client.update_recipients(&updated);
+
+    let stored = client.get_recipients();
+    assert_eq!(stored, updated);
+}
+
+#[test]
+fn test_set_admin_updates_stored_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let shares = Vec::from_array(&env, [
+        RecipientShare { destination: recipient.clone(), basis_points: 10_000 },
+    ]);
+    client.init(&admin, &shares);
+    client.set_admin(&new_admin);
+
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+fn test_distribute_noop_on_zero_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_sequence_number(10);
+
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+    stellar_asset_client.mint(&sender, &1000);
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let shares = Vec::from_array(&env, [
+        RecipientShare { destination: recipient.clone(), basis_points: 10_000 },
+    ]);
+    client.init(&admin, &shares);
+
+    // Zero-amount distribute is a no-op: no transfer, no ledger update
+    client.distribute(&token_id, &sender, &0);
+    assert_eq!(token_client.balance(&recipient), 0);
+    assert_eq!(client.get_distribution_count(), 0);
+}

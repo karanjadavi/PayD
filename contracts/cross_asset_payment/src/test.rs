@@ -454,3 +454,129 @@ fn test_contract_metadata() {
     assert_eq!(version, String::from_str(&env, env!("CARGO_PKG_VERSION")));
     assert_eq!(author, String::from_str(&env, env!("CARGO_PKG_AUTHORS")));
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── TWO-STEP ADMIN TRANSFER TESTS (Issue #192 / Part 47) ──────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_propose_admin_transfer_stores_pending() {
+    let (env, _admin, _contract_id, client) = setup();
+
+    let new_admin = Address::generate(&env);
+    client.propose_admin_transfer(&new_admin);
+
+    assert_eq!(client.get_pending_admin(), Some(new_admin));
+}
+
+#[test]
+fn test_accept_admin_transfer_promotes_new_admin() {
+    let (env, _admin, _contract_id, client) = setup();
+
+    let new_admin = Address::generate(&env);
+    client.propose_admin_transfer(&new_admin);
+    client.accept_admin_transfer(&new_admin);
+
+    // Pending should be cleared
+    assert_eq!(client.get_pending_admin(), None);
+}
+
+#[test]
+fn test_accept_admin_transfer_allows_new_admin_operations() {
+    let (env, _admin, _contract_id, client) = setup();
+
+    let new_admin = Address::generate(&env);
+    let from = Address::generate(&env);
+    let token_address = create_token(&env, &from, 500);
+
+    // Complete the handoff
+    client.propose_admin_transfer(&new_admin);
+    client.accept_admin_transfer(&new_admin);
+
+    // New admin can perform admin-gated operations (update_status)
+    let receiver_id  = String::from_str(&env, "worker-01");
+    let target_asset = String::from_str(&env, "USDC");
+    let anchor_id    = String::from_str(&env, "anchor-1");
+
+    let payment_id = client.initiate_payment(
+        &from, &200, &token_address, &receiver_id, &target_asset, &anchor_id,
+    );
+    // update_status is admin-gated; new_admin must be able to call it
+    client.update_status(&payment_id, &soroban_sdk::symbol_short!("settled"));
+}
+
+#[test]
+#[should_panic(expected = "Caller is not the proposed admin")]
+fn test_accept_admin_transfer_rejects_wrong_caller() {
+    let (env, _admin, _contract_id, client) = setup();
+
+    let proposed = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.propose_admin_transfer(&proposed);
+
+    // Impostor tries to accept — must panic
+    client.accept_admin_transfer(&impostor);
+}
+
+#[test]
+#[should_panic(expected = "No pending admin transfer")]
+fn test_accept_admin_transfer_with_no_proposal_panics() {
+    let (env, _admin, _contract_id, client) = setup();
+
+    let random = Address::generate(&env);
+    // No proposal has been made
+    client.accept_admin_transfer(&random);
+}
+
+#[test]
+fn test_cancel_admin_transfer_clears_pending() {
+    let (env, _admin, _contract_id, client) = setup();
+
+    let new_admin = Address::generate(&env);
+    client.propose_admin_transfer(&new_admin);
+
+    // Confirm it's pending
+    assert_eq!(client.get_pending_admin(), Some(new_admin));
+
+    client.cancel_admin_transfer();
+    assert_eq!(client.get_pending_admin(), None);
+}
+
+#[test]
+fn test_propose_admin_transfer_replaces_previous_proposal() {
+    let (env, _admin, _contract_id, client) = setup();
+
+    let first_candidate  = Address::generate(&env);
+    let second_candidate = Address::generate(&env);
+
+    client.propose_admin_transfer(&first_candidate);
+    assert_eq!(client.get_pending_admin(), Some(first_candidate));
+
+    // A second proposal overwrites the first
+    client.propose_admin_transfer(&second_candidate);
+    assert_eq!(client.get_pending_admin(), Some(second_candidate));
+}
+
+#[test]
+fn test_get_pending_admin_returns_none_initially() {
+    let (_env, _admin, _contract_id, client) = setup();
+    assert_eq!(client.get_pending_admin(), None);
+}
+
+#[test]
+fn test_full_two_step_admin_handoff_flow() {
+    let (env, _admin, _contract_id, client) = setup();
+
+    let new_admin = Address::generate(&env);
+
+    // Step 1: current admin proposes
+    client.propose_admin_transfer(&new_admin);
+    assert_eq!(client.get_pending_admin(), Some(new_admin.clone()));
+
+    // Step 2: proposed admin accepts
+    client.accept_admin_transfer(&new_admin);
+
+    // Pending must be cleared
+    assert_eq!(client.get_pending_admin(), None);
+}

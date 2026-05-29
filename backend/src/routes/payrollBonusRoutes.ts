@@ -224,4 +224,51 @@ router.delete('/items/:itemId', PayrollBonusController.deletePayrollItem);
  */
 router.get('/bonuses/history', PayrollBonusController.getBonusHistory);
 
+/**
+ * @swagger
+ * /api/v1/payroll-bonus/bonuses/by-type/{bonusType}:
+ *   get:
+ *     summary: List bonus items filtered by type (performance, referral, project, etc.)
+ *     tags: [Payroll Bonus]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: bonusType
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [performance, referral, project, retention, spot, other]
+ *     responses:
+ *       200:
+ *         description: Success
+ *       400:
+ *         description: Invalid bonus type
+ */
+router.get('/bonuses/by-type/:bonusType', PayrollBonusController.listBonusesByType);
+
+/**
+ * @swagger
+ * /api/v1/payroll-bonus/bonuses/performance:
+ *   get:
+ *     summary: List performance bonuses, optionally filtered by minimum score
+ *     tags: [Payroll Bonus]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: minScore
+ *         schema:
+ *           type: number
+ *           minimum: 0
+ *           maximum: 100
+ *         description: Minimum performance score (0–100)
+ *     responses:
+ *       200:
+ *         description: Success
+ *       400:
+ *         description: Invalid minScore
+ */
+router.get('/bonuses/performance', PayrollBonusController.getPerformanceBonuses);
+
 export default router;

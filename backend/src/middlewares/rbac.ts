@@ -29,6 +29,10 @@ export const isolateOrganization = async (req: Request, res: Response, next: Nex
   }
 
   const { organizationId } = req.user;
+  if (organizationId) {
+    req.organizationId = organizationId;
+    req.tenantId = organizationId;
+  }
 
   // If the request has an orgId in params or body, verify it matches
   const requestedOrgId =

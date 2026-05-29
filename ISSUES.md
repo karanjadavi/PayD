@@ -19,12 +19,12 @@ _Focuses on asset issuance, trustlines, payment batching, and Soroban logic._
 | :--- | :---------------------------------------------------------------------------------------- | :--------: | :-----: |
 | #001 | [Issue ORGUSD Custom Asset on Stellar Testnet](docs/issues/001-issue-orgusd-asset.md)     |   ● HARD   | ✅ DONE |
 | #002 | [Implement Trustline Acceptance Flow](docs/issues/002-trustline-flow.md)                  |  ● MEDIUM  | ✅ DONE |
-| #003 | [Build Bulk Payment Transaction Batching](docs/issues/003-bulk-payment-batching.md)       |   ● HARD   | ⏳ TODO |
+| #003 | [Build Bulk Payment Transaction Batching](docs/issues/003-bulk-payment-batching.md)       |   ● HARD   | ✅ DONE |
 | #004 | [Set Up Horizon Client & Config](docs/issues/004-horizon-client-setup.md)                 |   ● EASY   | ⏳ TODO |
 | #005 | [Integrate Anchor SEP-24 Protocol](docs/issues/005-sep-24-integration.md)                 |   ● HARD   | ⏳ TODO |
 | #006 | [Implement Stellar Wallet Kit Integration](docs/issues/006-wallet-kit-integration.md)     |  ● MEDIUM  | ⏳ TODO |
 | #007 | [Build On-Chain Tx Verification & Logging](docs/issues/007-tx-verification-logging.md)    |  ● MEDIUM  | ⏳ TODO |
-| #008 | [Implement Account Balance Preflight Checks](docs/issues/008-balance-preflight-checks.md) |   ● EASY   | ⏳ TODO |
+| #008 | [Implement Account Balance Preflight Checks](docs/issues/008-balance-preflight-checks.md) |   ● EASY   | ✅ DONE |
 | #009 | [Design Soroban Smart Contract](docs/issues/009-soroban-escrow-contract.md)               |   ● HARD   | ✅ DONE |
 | #010 | [Write Stellar Tx Signing Unit Tests](docs/issues/010-stellar-signing-tests.md)           |  ● MEDIUM  | ✅ DONE |
 | #031 | [Multi-Sig for Issuer Account](docs/issues/031-multi-sig-issuer.md)                       |   ● HARD   | ⏳ TODO |
@@ -61,8 +61,8 @@ _Focuses on project structure, database schema, payroll scheduling, and API logi
 | :--- | :---------------------------------------------------------------------------------------------------- | :--------: | :-----: |
 | #011 | [Set Up Express.js Project Structure](docs/issues/011-express-ts-setup.md)                            |  ● MEDIUM  | ⏳ TODO |
 | #012 | [Design & Migrate PostgreSQL Schema](docs/issues/012-db-schema-migrations.md)                         |  ● MEDIUM  | ✅ DONE |
-| #013 | [Build Payroll Scheduling Engine](docs/issues/013-payroll-scheduler.md)                               |   ● HARD   | ⏳ TODO |
-| #014 | [Implement JWT Auth & RBAC](docs/issues/014-jwt-rbac-auth.md)                                         |   ● EASY   | ⏳ TODO |
+| #013 | [Build Payroll Scheduling Engine](docs/issues/013-payroll-scheduler.md)                               |   ● HARD   | ✅ DONE |
+| #014 | [Implement JWT Auth & RBAC](docs/issues/014-jwt-rbac-auth.md)                                         |   ● EASY   | ✅ DONE |
 | #015 | [Build CSV Bulk Import Parser & Validator](docs/issues/015-csv-importer.md)                           |   ● HARD   | ⏳ TODO |
 | #016 | [Integrate FX Rate API](docs/issues/016-fx-rate-api.md)                                               |  ● MEDIUM  | ⏳ TODO |
 | #017 | [Build Employee CRUD API Endpoints](docs/issues/017-employee-crud-api.md)                             |   ● EASY   | ⏳ TODO |

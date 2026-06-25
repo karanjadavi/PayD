@@ -32,23 +32,30 @@ const validators: Record<string, (value: string) => string | null> = {
 export default function BulkPayrollUpload() {
   const [parsedRows, setParsedRows] = useState<CSVRow[]>([]);
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validRows = parsedRows.filter((r) => r.isValid);
   const invalidRows = parsedRows.filter((r) => !r.isValid);
 
-  const handleSubmit = () => {
-    if (validRows.length === 0) return;
-    // In production this would POST validRows to the backend payroll API
-    console.log(
-      'Submitting payroll batch:',
-      validRows.map((r) => r.data)
-    );
-    setSubmitted(true);
+  const handleSubmit = async () => {
+    if (validRows.length === 0 || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      // In production this would POST validRows to the backend payroll API
+      console.log(
+        'Submitting payroll batch:',
+        validRows.map((r) => r.data)
+      );
+      setSubmitted(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleReset = () => {
     setParsedRows([]);
     setSubmitted(false);
+    setIsSubmitting(false);
   };
 
   if (submitted) {
@@ -155,10 +162,17 @@ export default function BulkPayrollUpload() {
                 variant="primary"
                 size="md"
                 onClick={handleSubmit}
-                disabled={validRows.length === 0}
-                aria-label={`Submit ${validRows.length} payment${validRows.length !== 1 ? 's' : ''}`}
+                disabled={validRows.length === 0 || isSubmitting}
+                aria-label={
+                  isSubmitting
+                    ? 'Submitting payroll batch…'
+                    : `Submit ${validRows.length} payment${validRows.length !== 1 ? 's' : ''}`
+                }
+                aria-busy={isSubmitting}
               >
-                Submit {validRows.length} Payment{validRows.length !== 1 ? 's' : ''}
+                {isSubmitting
+                  ? 'Submitting…'
+                  : `Submit ${validRows.length} Payment${validRows.length !== 1 ? 's' : ''}`}
               </Button>
             </div>
           </div>

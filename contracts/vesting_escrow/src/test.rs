@@ -133,3 +133,23 @@ fn extend_vesting_overflow_returns_error() {
     let result = client.try_extend_vesting(&u64::MAX);
     assert_eq!(result, Err(Ok(ContractError::DurationOverflow)));
 }
+
+// ── ISSUE #905 test ────────────────────────────────────────────────────────────
+
+#[test]
+fn partial_clawback_amount_exceeds_total_returns_invariant_violation() {
+    let (e, funder, beneficiary, clawback_admin, admin, token_contract, _, _, client) = setup();
+    init_default(
+        &client,
+        &e,
+        &funder,
+        &beneficiary,
+        &token_contract,
+        &clawback_admin,
+        &admin,
+    );
+
+    // total_amount is 10_000; requesting 20_000 exceeds the held balance
+    let result = client.try_partial_clawback(&20_000i128);
+    assert_eq!(result, Err(Ok(ContractError::InvariantViolation)));
+}

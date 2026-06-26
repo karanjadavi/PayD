@@ -33,6 +33,8 @@ pub enum ContractError {
     InvalidExtension = 12,
     /// Partial clawback would reduce the grant below what has already been claimed.
     ClawbackBelowClaimed = 13,
+    /// Duration overflow when extending the vesting schedule.
+    DurationOverflow = 14,
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -539,7 +541,10 @@ impl VestingContract {
         let previous_duration = config.duration_seconds;
         let previous_end = config.start_time.saturating_add(previous_duration);
 
-        config.duration_seconds = config.duration_seconds.saturating_add(additional_seconds);
+        config.duration_seconds = config
+            .duration_seconds
+            .checked_add(additional_seconds)
+            .ok_or(ContractError::DurationOverflow)?;
         let new_end = config.start_time.saturating_add(config.duration_seconds);
 
         env.storage().persistent().set(&DataKey::Config, &config);

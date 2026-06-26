@@ -310,3 +310,34 @@ fn secp256k1_signer_rejects_ed25519_proof() {
         assert_eq!(result, Err(WalletError::UnknownSigner));
     });
 }
+
+#[test]
+fn mixed_multisig_with_swapped_types_fails_threshold() {
+    // 2-of-2 wallet: signer[0] is ed25519, signer[1] is secp256k1.
+    // Submit the proofs with swapped types — neither proof matches any signer
+    // so the batch never satisfies the threshold.
+    let env = Env::default();
+
+    let (ed_signer_key, ed_signing_key) = make_ed25519_signer(&env, [30u8; 32]);
+    let (secp_signer_key, secp_signing_key) = make_secp256k1_signer(&env, [31u8; 32]);
+    let signers = Vec::from_array(&env, [ed_signer_key, secp_signer_key]);
+    let (contract_id, _client) = register_wallet(&env, signers, 2);
+
+    let raw = Bytes::from_slice(&env, &[44u8; 32]);
+    let payload = env.crypto().sha256(&raw);
+
+    // Deliberately swap: submit secp proof for slot 0 and ed proof for slot 1
+    let proofs = Vec::from_array(
+        &env,
+        [
+            sign_secp256k1(&payload, &secp_signing_key, &env),
+            sign_ed25519(&payload, &ed_signing_key, &env),
+        ],
+    );
+
+    env.as_contract(&contract_id, || {
+        let result = SmartWalletContract::verify_signatures_inner(&env, &payload, &proofs);
+        // Both proofs have no matching signer → first unmatched proof → UnknownSigner
+        assert_eq!(result, Err(WalletError::UnknownSigner));
+    });
+}

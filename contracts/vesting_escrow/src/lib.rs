@@ -744,6 +744,10 @@ impl VestingContract {
     }
 
     fn calc_vested_at(now: u64, config: &VestingConfig) -> i128 {
+        if config.duration_seconds == 0 {
+            return config.total_amount;
+        }
+
         let cliff_at = config.start_time.saturating_add(config.cliff_seconds);
         let end_at = config.start_time.saturating_add(config.duration_seconds);
 

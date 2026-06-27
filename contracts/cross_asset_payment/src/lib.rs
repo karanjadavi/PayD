@@ -22,6 +22,8 @@ pub enum CrossAssetPaymentError {
     AdminMismatch = 9,
     LedgerReplayDetected = 10,
     ContractPaused = 11,
+    NotProposedAdmin = 12,
+    NoPendingAdminTransfer = 13,
 }
 
 /// Emitted when the current admin proposes a new admin (two-step transfer).
@@ -192,15 +194,15 @@ impl CrossAssetPaymentContract {
     ///
     /// On success the caller becomes the new admin and the pending proposal is
     /// cleared, completing the two-step handoff.
-    pub fn accept_admin_transfer(env: Env, new_admin: Address) {
+    pub fn accept_admin_transfer(env: Env, new_admin: Address) -> Result<(), CrossAssetPaymentError> {
         let pending: Address = env
             .storage()
             .persistent()
             .get(&DataKey::PendingAdmin)
-            .expect("No pending admin transfer");
+            .ok_or(CrossAssetPaymentError::NoPendingAdminTransfer)?;
 
         if pending != new_admin {
-            panic!("Caller is not the proposed admin");
+            return Err(CrossAssetPaymentError::NotProposedAdmin);
         }
 
         new_admin.require_auth();
@@ -209,7 +211,7 @@ impl CrossAssetPaymentContract {
             .storage()
             .persistent()
             .get(&DataKey::Admin)
-            .expect("Not initialized");
+            .ok_or(CrossAssetPaymentError::NotInitialized)?;
 
         env.storage().persistent().set(&DataKey::Admin, &new_admin);
         env.storage().persistent().remove(&DataKey::PendingAdmin);
@@ -220,6 +222,8 @@ impl CrossAssetPaymentContract {
             new_admin,
         }
         .publish(&env);
+
+        Ok(())
     }
 
     /// Cancels the pending admin transfer proposal. Only the current admin may call this.

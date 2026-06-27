@@ -23,6 +23,12 @@ pub enum RevenueSplitError {
     UnauthorizedDistribution = 7,
     ContractPaused = 8,
     UnsupportedAsset = 9,
+    /// Admin or Recipients storage entry is missing; contract may not be initialized.
+    NotInitialized = 10,
+    /// Accumulated basis-points sum overflowed u32 during share validation.
+    ShareOverflow = 11,
+    /// Distribution or preview amount must not be negative.
+    InvalidAmount = 12,
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -153,7 +159,7 @@ impl RevenueSplitContract {
     }
 
     /// Returns the current admin address.
-    pub fn get_admin(env: Env) -> Address {
+    pub fn get_admin(env: Env) -> Result<Address, RevenueSplitError> {
         Self::load_admin(&env)
     }
 
@@ -163,14 +169,17 @@ impl RevenueSplitContract {
     }
 
     /// Previews how an incoming amount would be distributed across recipients.
-    pub fn preview_distribution(env: Env, amount: i128) -> Vec<DistributionPreview> {
+    pub fn preview_distribution(
+        env: Env,
+        amount: i128,
+    ) -> Result<Vec<DistributionPreview>, RevenueSplitError> {
         let shares = Self::load_recipients(&env);
         Self::build_distribution_preview(&env, &shares, amount)
     }
 
     /// Allows the current admin to set a new admin.
     pub fn set_admin(env: Env, new_admin: Address) -> Result<(), RevenueSplitError> {
-        let admin = Self::load_admin(&env);
+        let admin = Self::load_admin(&env)?;
         admin.require_auth();
         env.storage().persistent().set(&DataKey::Admin, &new_admin);
         Self::bump_core_ttl(&env);
@@ -180,6 +189,7 @@ impl RevenueSplitContract {
             new_admin,
         }
         .publish(&env);
+        Ok(())
     }
 
     /// Updates the recipient splits dynamically (admin only).
@@ -187,7 +197,7 @@ impl RevenueSplitContract {
         env: Env,
         new_shares: Vec<RecipientShare>,
     ) -> Result<(), RevenueSplitError> {
-        let admin = Self::load_admin(&env);
+        let admin = Self::load_admin(&env)?;
         admin.require_auth();
         Self::validate_shares(&new_shares)?;
         let recipient_count = new_shares.len();
@@ -208,13 +218,14 @@ impl RevenueSplitContract {
     /// While paused, all `distribute` calls are rejected. Administrative
     /// functions (`set_admin`, `update_recipients`, `bump_ttl`) remain
     /// available so that the contract can be restored to a healthy state.
-    pub fn set_paused(env: Env, paused: bool) {
-        let admin = Self::load_admin(&env);
+    pub fn set_paused(env: Env, paused: bool) -> Result<(), RevenueSplitError> {
+        let admin = Self::load_admin(&env)?;
         admin.require_auth();
 
         env.storage().instance().set(&DataKey::Paused, &paused);
 
         PauseStateChangedEvent { paused, admin }.publish(&env);
+        Ok(())
     }
 
     /// Returns `true` if the contract is currently paused.
@@ -239,7 +250,7 @@ impl RevenueSplitContract {
     /// Once at least one asset is added, `distribute` only accepts listed
     /// assets.
     pub fn add_supported_asset(env: Env, token: Address) -> Result<(), RevenueSplitError> {
-        let admin = Self::load_admin(&env);
+        let admin = Self::load_admin(&env)?;
         admin.require_auth();
 
         let mut assets = Self::load_supported_assets_or_empty(&env);
@@ -254,7 +265,7 @@ impl RevenueSplitContract {
 
     /// Removes a token asset from the supported-asset allowlist (admin only).
     pub fn remove_supported_asset(env: Env, token: Address) -> Result<(), RevenueSplitError> {
-        let admin = Self::load_admin(&env);
+        let admin = Self::load_admin(&env)?;
         admin.require_auth();
 
         let assets = Self::load_supported_assets_or_empty(&env);
@@ -313,7 +324,7 @@ impl RevenueSplitContract {
 
         let shares = Self::load_recipients(&env);
         let recipient_count = shares.len();
-        let preview = Self::build_distribution_preview(&env, &shares, amount);
+        let preview = Self::build_distribution_preview(&env, &shares, amount)?;
         let client = token::Client::new(&env, &token);
 
         for payment in preview.iter() {
@@ -376,10 +387,11 @@ impl RevenueSplitContract {
     }
 
     /// Extends TTL for all critical contract state (admin only).
-    pub fn bump_ttl(env: Env) {
-        let admin = Self::load_admin(&env);
+    pub fn bump_ttl(env: Env) -> Result<(), RevenueSplitError> {
+        let admin = Self::load_admin(&env)?;
         admin.require_auth();
         Self::bump_core_ttl(&env);
+        Ok(())
     }
 
     // ── Private helpers ───────────────────────────────────────────────────
@@ -420,11 +432,11 @@ impl RevenueSplitContract {
         Ok(())
     }
 
-    fn load_admin(env: &Env) -> Address {
+    fn load_admin(env: &Env) -> Result<Address, RevenueSplitError> {
         env.storage()
             .persistent()
             .get(&DataKey::Admin)
-            .expect("Admin entry unavailable; restore and retry")
+            .ok_or(RevenueSplitError::NotInitialized)
     }
 
     fn load_recipients(env: &Env) -> Vec<RecipientShare> {
@@ -450,23 +462,27 @@ impl RevenueSplitContract {
         let mut total_bp = 0u32;
         let mut i = 0u32;
         while i < shares.len() {
-            let share = shares.get(i).expect("Recipient share missing");
+            // Index is bounded by `i < shares.len()`, so None is an unreachable
+            // invariant violation; surface it as a typed error rather than panicking.
+            let share = shares.get(i).ok_or(RevenueSplitError::ZeroRecipients)?;
             if share.basis_points == 0 {
                 return Err(RevenueSplitError::ZeroBasisPoints);
             }
 
             let mut j = i + 1;
             while j < shares.len() {
-                let other = shares.get(j).expect("Recipient share missing");
+                let other = shares.get(j).ok_or(RevenueSplitError::ZeroRecipients)?;
                 if share.destination == other.destination {
                     return Err(RevenueSplitError::DuplicateRecipient);
                 }
                 j += 1;
             }
 
+            // checked_add guards against maliciously large basis_points values that
+            // would silently wrap around and bypass the BasisPointsSumMismatch check.
             total_bp = total_bp
                 .checked_add(share.basis_points)
-                .expect("Share total overflow");
+                .ok_or(RevenueSplitError::ShareOverflow)?;
             i += 1;
         }
 
@@ -536,9 +552,9 @@ impl RevenueSplitContract {
         env: &Env,
         shares: &Vec<RecipientShare>,
         amount: i128,
-    ) -> Vec<DistributionPreview> {
+    ) -> Result<Vec<DistributionPreview>, RevenueSplitError> {
         if amount < 0 {
-            panic!("Amount must not be negative");
+            return Err(RevenueSplitError::InvalidAmount);
         }
 
         let mut preview = Vec::new(env);
@@ -562,7 +578,7 @@ impl RevenueSplitContract {
             });
         }
 
-        preview
+        Ok(preview)
     }
 
     fn bump_core_ttl(env: &Env) {

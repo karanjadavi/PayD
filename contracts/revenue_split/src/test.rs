@@ -965,3 +965,134 @@ fn test_distribute_noop_on_zero_amount() {
     assert_eq!(token_client.balance(&recipient), 0);
     assert_eq!(client.get_distribution_count(), 0);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── ISSUE #892: set_admin / load_admin must not panic ────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_set_admin_before_init_returns_not_initialized() {
+    // Calling set_admin on an uninitialized contract must return
+    // NotInitialized instead of panicking.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let new_admin = Address::generate(&env);
+    let result = client.try_set_admin(&new_admin);
+    assert_eq!(result, Err(Ok(RevenueSplitError::NotInitialized)));
+}
+
+#[test]
+fn test_get_admin_before_init_returns_not_initialized() {
+    let env = Env::default();
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let result = client.try_get_admin();
+    assert_eq!(result, Err(Ok(RevenueSplitError::NotInitialized)));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── ISSUE #893: validate_shares() must return typed errors, not panic ─────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_validate_shares_overflow_returns_share_overflow() {
+    // Passing a share whose basis_points is large enough that accumulating
+    // two of them overflows u32 must return ShareOverflow, not panic.
+    // We use two recipients each with u32::MAX / 2 + 1, guaranteeing overflow.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    // u32::MAX / 2 + 1 = 2_147_483_648; two of these overflow u32.
+    let large_bp: u32 = u32::MAX / 2 + 1;
+    let shares = Vec::from_array(
+        &env,
+        [
+            RecipientShare {
+                destination: r1.clone(),
+                basis_points: large_bp,
+            },
+            RecipientShare {
+                destination: r2.clone(),
+                basis_points: large_bp,
+            },
+        ],
+    );
+
+    let result = client.try_init(&admin, &shares);
+    assert_eq!(result, Err(Ok(RevenueSplitError::ShareOverflow)));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── ISSUE #895: build_distribution_preview() must return typed error ──────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_preview_distribution_negative_amount_returns_invalid_amount() {
+    // preview_distribution(-1) must return InvalidAmount, not panic.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let shares = Vec::from_array(
+        &env,
+        [RecipientShare {
+            destination: recipient.clone(),
+            basis_points: 10_000,
+        }],
+    );
+    client.init(&admin, &shares);
+
+    let result = client.try_preview_distribution(&-1_i128);
+    assert_eq!(result, Err(Ok(RevenueSplitError::InvalidAmount)));
+}
+
+#[test]
+fn test_preview_distribution_zero_amount_returns_empty_amounts() {
+    // Zero is valid — each recipient gets 0, no panic.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    let contract_id = env.register(RevenueSplitContract, ());
+    let client = RevenueSplitContractClient::new(&env, &contract_id);
+
+    let shares = Vec::from_array(
+        &env,
+        [
+            RecipientShare {
+                destination: r1.clone(),
+                basis_points: 6000,
+            },
+            RecipientShare {
+                destination: r2.clone(),
+                basis_points: 4000,
+            },
+        ],
+    );
+    client.init(&admin, &shares);
+
+    let preview = client.preview_distribution(&0_i128);
+    for entry in preview.iter() {
+        assert_eq!(entry.amount, 0);
+    }
+}

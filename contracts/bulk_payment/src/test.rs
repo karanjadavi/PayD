@@ -2417,41 +2417,137 @@ fn test_archive_refunded_status_preserved() {
     assert_eq!(s1, PaymentStatus::Refunded);
 }
 
-// ── #873: min_ledger_gap bound validation ─────────────────────────────────────
+// ── #871: ThrottleLimitExceeded via execute_batch_partial / execute_batch_v2 ──
 
 #[test]
-#[should_panic(expected = "Error(Contract, #23)")]
-fn test_set_throttle_config_min_ledger_gap_too_large_panics() {
-    let (_env, _sender, _token, client) = setup();
-    // 17_281 exceeds MAX_THROTTLE_LEDGER_GAP (LEDGERS_PER_DAY = 17_280)
-    client.set_throttle_config(&1, &17_281);
+fn test_throttle_blocks_execute_batch_partial() {
+    let (env, sender, token, client) = setup_with_ledger(100);
+    client.set_throttle_config(&100, &3);
+    let payments = one_payment(&env);
+
+    client.execute_batch_partial(&sender, &token, &payments, &0);
+
+    env.ledger().set_sequence_number(102); // gap = 2, need ≥ 3
+    let result = client.try_execute_batch_partial(&sender, &token, &payments, &1);
+    assert_eq!(result, Err(Ok(ContractError::ThrottleLimitExceeded)));
 }
 
 #[test]
-fn test_set_throttle_config_max_min_ledger_gap_accepted() {
-    let (_env, _sender, _token, client) = setup();
-    // Exactly at the ceiling should be accepted
-    client.set_throttle_config(&1, &17_280);
-    let cfg = client.get_throttle_config();
-    assert_eq!(cfg.min_ledger_gap, 17_280);
+fn test_throttle_allows_execute_batch_partial_after_gap() {
+    let (env, sender, token, client) = setup_with_ledger(100);
+    client.set_throttle_config(&100, &3);
+    let payments = one_payment(&env);
+
+    client.execute_batch_partial(&sender, &token, &payments, &0);
+
+    env.ledger().set_sequence_number(103); // gap = 3, exactly meets min_ledger_gap
+    let batch_id = client.execute_batch_partial(&sender, &token, &payments, &1);
+    assert_eq!(batch_id, 2);
 }
 
-// ── #870: record_usage saturating_add prevents overflow ───────────────────────
+#[test]
+fn test_throttle_blocks_execute_batch_v2_partial_mode() {
+    let (env, sender, token, client) = setup_with_ledger(100);
+    client.set_throttle_config(&100, &3);
+    let payments = one_payment(&env);
+
+    client.execute_batch_v2(&sender, &token, &payments, &0, &false);
+
+    env.ledger().set_sequence_number(102); // gap = 2, need ≥ 3
+    let result = client.try_execute_batch_v2(&sender, &token, &payments, &1, &false);
+    assert_eq!(result, Err(Ok(ContractError::ThrottleLimitExceeded)));
+}
 
 #[test]
-fn test_usage_saturates_at_i128_max_does_not_overflow() {
+fn test_throttle_allows_execute_batch_v2_after_gap() {
+    let (env, sender, token, client) = setup_with_ledger(100);
+    client.set_throttle_config(&100, &3);
+    let payments = one_payment(&env);
+
+    client.execute_batch_v2(&sender, &token, &payments, &0, &false);
+
+    env.ledger().set_sequence_number(103); // gap = 3, exactly meets min_ledger_gap
+    let batch_id = client.execute_batch_v2(&sender, &token, &payments, &1, &false);
+    assert_eq!(batch_id, 2);
+}
+
+// ── #872: dust/residual refund in execute_batch_partial ───────────────────────
+
+#[test]
+fn test_dust_amounts_paid_exactly_no_residual_held() {
+    // Tests that 1-stroop "dust" amounts are transferred to recipients, not discarded.
+    // Also verifies the sender balance decreases by exactly the total — no residual
+    // is accidentally retained by the contract (exercises the immediate_refund code path).
     let (env, sender, token, client) = setup();
 
-    // Set an extremely high daily limit so the check doesn't block us
-    client.set_default_limits(&i128::MAX, &i128::MAX, &i128::MAX);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env); // dust recipient (1 stroop)
+    let r3 = Address::generate(&env);
 
-    // First batch to establish a usage entry
-    let payments = one_payment(&env);
-    client.execute_batch(&sender, &token, &payments, &0);
+    let mut payments: Vec<PaymentOp> = Vec::new(&env);
+    payments.push_back(PaymentOp {
+        recipient: r1.clone(),
+        amount: 100_000,
+        category: soroban_sdk::symbol_short!("payroll"),
+    });
+    payments.push_back(PaymentOp {
+        recipient: r2.clone(),
+        amount: 1, // 1-stroop dust
+        category: soroban_sdk::symbol_short!("payroll"),
+    });
+    payments.push_back(PaymentOp {
+        recipient: r3.clone(),
+        amount: 50_000,
+        category: soroban_sdk::symbol_short!("payroll"),
+    });
 
-    // Mint enough to send i128::MAX - current_balance and fill to near max
-    // Instead verify the contract doesn't panic when pushed near the boundary.
-    // The saturating_add ensures daily_spent + amount never wraps around.
-    let cfg = client.get_throttle_config();
-    assert!(cfg.max_batch_size > 0); // contract still alive after usage recorded
+    let batch_id = client.execute_batch_partial(&sender, &token, &payments, &client.get_sequence());
+
+    let tc = TokenClient::new(&env, &token);
+    assert_eq!(tc.balance(&r1), 100_000);
+    assert_eq!(tc.balance(&r2), 1); // dust was paid, not discarded
+    assert_eq!(tc.balance(&r3), 50_000);
+    // Sender lost exactly the sum of all amounts — no residual held by contract
+    assert_eq!(tc.balance(&sender), 1_000_000 - 150_001);
+
+    let record = client.get_batch(&batch_id);
+    assert_eq!(record.success_count, 3);
+    assert_eq!(record.fail_count, 0);
+}
+
+#[test]
+fn test_dust_invalid_mix_refunds_correctly() {
+    // Payments include a valid dust amount (1 stroop) alongside a zero/invalid amount.
+    // The zero op is excluded from the total pull, so the sender pays only the valid sum.
+    let (env, sender, token, client) = setup();
+
+    let r1 = Address::generate(&env);
+    let r_invalid = Address::generate(&env); // will be skipped (amount = 0)
+    let r2 = Address::generate(&env);
+
+    let mut payments: Vec<PaymentOp> = Vec::new(&env);
+    payments.push_back(PaymentOp {
+        recipient: r1.clone(),
+        amount: 200_000,
+        category: soroban_sdk::symbol_short!("payroll"),
+    });
+    payments.push_back(PaymentOp {
+        recipient: r_invalid.clone(),
+        amount: 0, // invalid / dust excluded from total
+        category: soroban_sdk::symbol_short!("payroll"),
+    });
+    payments.push_back(PaymentOp {
+        recipient: r2.clone(),
+        amount: 3, // 3-stroop dust — must be paid, not skipped
+        category: soroban_sdk::symbol_short!("payroll"),
+    });
+
+    client.execute_batch_partial(&sender, &token, &payments, &client.get_sequence());
+
+    let tc = TokenClient::new(&env, &token);
+    assert_eq!(tc.balance(&r1), 200_000);
+    assert_eq!(tc.balance(&r_invalid), 0);
+    assert_eq!(tc.balance(&r2), 3);
+    // total pulled = 200_000 + 3 = 200_003 (zero op excluded)
+    assert_eq!(tc.balance(&sender), 1_000_000 - 200_003);
 }

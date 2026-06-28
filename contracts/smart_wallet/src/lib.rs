@@ -190,9 +190,10 @@ impl SmartWalletContract {
         Ok(())
     }
 
-    /// Removes an existing signer key from the wallet. Panics if removing the
-    /// signer would leave fewer signers than the current threshold. Requires
-    /// the contract account to authorise.
+    /// Removes an existing signer key from the wallet.
+    /// Returns `WalletError::UnknownSigner` if the key is not registered, or
+    /// `WalletError::InvalidThreshold` if removal would drop below the current
+    /// threshold. Requires the contract account to authorise.
     pub fn remove_signer(env: Env, signer: SignerKey) -> Result<(), WalletError> {
         env.current_contract_address().require_auth();
 

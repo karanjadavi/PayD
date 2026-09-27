@@ -99,6 +99,44 @@ The contract includes comprehensive replay-attack tests:
 
 ---
 
+## Timestamp Manipulation Resistance (Issue #1615)
+
+The vesting schedule relies on `e.ledger().timestamp()` for cliff and linear-vesting calculations. Stellar consensus enforces a monotonically increasing ledger close time across the network, but this contract adds a defense-in-depth check rather than trusting that guarantee unconditionally.
+
+### Protection Mechanism
+- A `LastObservedTimestamp` key stores the highest ledger timestamp seen by any fund-moving call (`claim()`, `clawback()`).
+- Before computing a vested amount for either call, `require_monotonic_timestamp` compares the current `e.ledger().timestamp()` against the stored value and returns `TimestampRegression` if it has moved backward.
+- On success, the stored value is advanced to the new timestamp (only ever forward).
+
+### Anomaly Scenario Prevented
+If a manipulated or anomalous ledger timestamp were ever observed moving backward relative to a prior fund-moving call, the contract now rejects the call outright instead of silently recomputing a smaller (or otherwise incorrect) vested amount from it. This check is independent of, and in addition to, the existing `LedgerReplayDetected` same-ledger check (Issue #1600), which only guards duplicate calls within a single ledger sequence and does not by itself detect a backward-moving timestamp across different ledgers.
+
+### Scope
+- `preview_vested_amount` and `get_vesting_snapshot` are read-only views and are intentionally left unguarded: they cannot move funds, and `preview_vested_amount` is designed to accept an arbitrary timestamp for forward-looking previews.
+- `partial_clawback` and `extend_vesting` do not read `e.ledger().timestamp()` for their accounting and are unaffected.
+
+### Test Coverage
+- **claim_rejects_timestamp_regression**: A legitimate claim succeeds; a subsequent claim at an anomalous backward timestamp is rejected with `TimestampRegression`; a further claim at a timestamp forward of the last observed value succeeds again.
+- **clawback_rejects_timestamp_regression**: A clawback attempted after a backward-moving timestamp is rejected the same way, and the grant remains active.
+## Race-Condition Test Coverage (Issue #1616)
+
+Added tests specifically targeting concurrent (same-ledger) withdrawal
+attempts against a vesting grant, to rule out double-payout risk ahead of
+mainnet:
+
+- **Concurrent Claim Race**: Two claim attempts racing for the same ledger
+  transfer tokens exactly once; the losing attempt moves zero tokens.
+- **Claim vs. Clawback Race**: A beneficiary claim and an admin clawback
+  racing in the same ledger use independent replay guards, so both may
+  execute -- verified that the total paid out still equals the original
+  grant (no funds duplicated or lost).
+- **Repeated Per-Ledger Races**: Simulates a claim race at every ledger
+  across a multi-step vesting schedule, confirming cumulative claims track
+  the vested amount exactly and never exceed the total grant.
+
+See `contracts/vesting_escrow/src/test_race_conditions.rs`.
+
+---
 ## Test Coverage for Edge Cases (Issue #1595)
 
 The contract includes comprehensive edge-case tests to verify correct behavior under boundary conditions:
@@ -123,6 +161,10 @@ These tests ensure robustness before mainnet deployment where financial correctn
    - `require_unique_ledger` checks `LastClaimLedger` and `LastClawbackLedger` to prevent duplicate claims/clawbacks in the same ledger sequence.
 4. **Circuit Breaker (`Paused` state)**:
    - When paused, `claim`, `clawback`, and `partial_clawback` calls return `ContractPaused`.
+5. **Escrowed-Funds Accounting Invariant**:
+   - The contract guarantees that the token balance held at the contract address strictly equals the unresolved liabilities of the grant across every lifecycle event:
+     $$\text{contract\_token\_balance} = \text{config.total\_amount} - \text{config.claimed\_amount}$$
+   - This invariant strictly holds under all execution sequences: during the pre-cliff window, throughout progressive linear claims, across partial clawbacks (with `LastClawbackLedger` replay protection), upon full clawback execution (where unvested tokens return to admin and unreleased-vested tokens remain available for the beneficiary), and upon final resolution where the contract balance reaches exactly 0. Validated via `test_invariant_vesting_balance_equals_unresolved_liabilities`.
 
 ---
 
